@@ -31,10 +31,10 @@ BldcFOC_teensy/
 
 1. Clone the repository:
 
-```bash
-git clone https://github.com/Ineso1/bldcFOC_teensy.git
-cd bldcFOC_teensy
-```
+   ```bash
+   git clone https://github.com/Ineso1/bldcFOC_teensy.git
+   cd bldcFOC_teensy
+   ```
 
 2. Open the desired folder (`Foc` or `Trap`) in **Arduino IDE** or **PlatformIO**.
 
@@ -43,6 +43,12 @@ cd bldcFOC_teensy
 4. Upload to your Teensy board.
 
 5. Monitor the serial output for velocity and status logs.
+
+## Demo
+
+Watch the following video to see the BLDC motor control in action:
+
+[![BLDC Motor Control Demo](https://img.youtube.com/vi/vhkOnLaiGKc/0.jpg)](https://www.youtube.com/watch?v=vhkOnLaiGKc)
 
 ## Notes
 
