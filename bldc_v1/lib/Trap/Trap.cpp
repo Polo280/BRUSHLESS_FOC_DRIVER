@@ -18,8 +18,8 @@ void Trap::run()
         uint8_t hall = hallState;
         uint16_t throttle = throttleNormVal;
         writeTrap(hall, throttle);
-        validateRpm();
-        estimatePosition();
+        // validateRpm();
+        // estimatePosition();
         // Serial.print("v: ");
         // Serial.println(rpm, 6);
         // Serial.print("\t");
@@ -53,13 +53,14 @@ void Trap::run()
         /*Test rpm end*/
 
         newThrottleVal = false;
-        #ifdef SERIAL_DEBUG
-            Serial.print(hall);
-            Serial.print("\t");
-            Serial.print((int)phaseA.mode);
-            Serial.print((int)phaseB.mode);
-            Serial.print((int)phaseC.mode);
-        #endif
+        // #ifdef SERIAL_DEBUG
+        //     Serial.print(hall);
+        //     Serial.print("\t");
+        //     Serial.print((int)phaseA.mode);
+        //     Serial.print((int)phaseB.mode);
+        //     Serial.print((int)phaseC.mode);
+        // #endif
+
     }
     #ifdef SERIAL_DEBUG_CURRENTS
         #ifdef CSV_FORMAT_CURRENTS
@@ -111,13 +112,13 @@ void Trap::nextStep(uint8_t &currentHallState) {
 }
 
 void Trap::writeTrap(uint8_t &halls, uint16_t uDuty){
-    toggleLed();
+    // toggleLed();
     // Bound duty
-    #ifdef SERIAL_DEBUG
-        Serial.print("   ");
-        Serial.print(uDuty);
-        Serial.print("   ");
-    #endif
+    // #ifdef SERIAL_DEBUG
+    //     Serial.print("   ");
+    //     Serial.print(uDuty);
+    //     Serial.print("   ");
+    // #endif
     if(uDuty > 4096){ 
         uDuty = 4096;
     }
@@ -175,5 +176,5 @@ void Trap::writeTrap(uint8_t &halls, uint16_t uDuty){
         }
     #endif
     
-    toggleLed();
+    // toggleLed();
 }

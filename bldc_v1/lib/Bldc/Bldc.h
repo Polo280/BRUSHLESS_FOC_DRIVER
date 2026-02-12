@@ -4,12 +4,33 @@
 #include <Arduino.h>
 #include "Pinout.h"
 #include <cstdint>
+#include "BLDC_Logger.h"
+
+// SD logging
+extern BLDC_Logger* logger;
 
 class Bldc {
 public:
     #ifdef MEASURE_TICKS_PER_REV
         int testRev;
     #endif
+
+    /* ---------- Structs to serve telemetry  ---------- */
+
+    typedef struct __attribute__((packed))
+    {
+        uint16_t vbus_mV;
+        int32_t  ibus_mA;
+        int32_t  rpm;
+        uint16_t fault_flags;
+    } foc_all_fast_t;
+
+
+    typedef struct __attribute__((packed))
+    {
+        uint8_t  state;
+        uint16_t fault_flags;
+    } foc_status_t;
 
 
     // RPM measures
@@ -28,16 +49,22 @@ public:
 
     enum class ControlType { Trap, Foc }; 
     enum class CurrentSensorChannel { A, B, C };
+    enum class AnalogSensorChannel {throttle=1, VBatSense=10};
 
     // Control
     volatile unsigned long lastVelPosCalc;
     
     // Member variables
-    volatile uint32_t throttleRawVal; // Throttle value
+    volatile uint32_t throttleRawVal;  // Throttle raw reading from ADC1
     volatile uint16_t throttleNormVal; // Throttle value
+    volatile uint16_t VBatSenseRaw;    // Battery raw reading from ADC1
+    volatile uint8_t  VBat;            // Battery Voltage
 
-    // Global state variable to track the current sensor
-    CurrentSensorChannel currentChannel = CurrentSensorChannel::A;
+    // Variable to track analog sensors in ADC1 (throttle, battery voltage)
+    AnalogSensorChannel analogChannelADC1 = AnalogSensorChannel::throttle;
+
+    // Global state variable to track current sensors 
+    CurrentSensorChannel currentChannelADC2 = CurrentSensorChannel::A;
     
     // Currents measures
     volatile uint16_t currentA;
@@ -120,7 +147,8 @@ protected:
 };
 
 // ADC IRQ trigger
-void triggerADC();
+void triggerADC_Throttle();
+void triggerADC_VBat();
 void triggerADC_CurrentA();
 void triggerADC_CurrentB();
 void triggerADC_CurrentC();

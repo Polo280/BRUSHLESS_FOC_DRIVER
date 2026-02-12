@@ -1,58 +1,96 @@
+// FOC Driver controlled by Teensy 4.1 (IMX RT1060)
+
 #include "Bldc.h"
 
 static Bldc* instance = nullptr;
+static uint8_t sd_aux = 0;
+
+BLDC_Logger* logger = new BLDC_Logger; 
 
 void PWM2_CompletedCallback(){
     if (IMXRT_FLEXPWM2.SM[0].STS & 0x1) {  // HF (Half Period Flag)
-        IMXRT_FLEXPWM2.SM[0].STS = 0x1;  // Clear HF flag
-        triggerADC();
-        triggerADC_CurrentA();
+        IMXRT_FLEXPWM2.SM[0].STS = 0x1;    // Clear HF flag
+
+        // Start both ADCs in parallel
+        if(instance->analogChannelADC1 == Bldc::AnalogSensorChannel::throttle){
+            instance->analogChannelADC1 = Bldc::AnalogSensorChannel::VBatSense;
+            triggerADC_VBat();
+        }else{
+            instance->analogChannelADC1 = Bldc::AnalogSensorChannel::throttle;
+            triggerADC_Throttle();
+        }
+        // Currents (ADC2)
+        if(instance->currentChannelADC2 == Bldc::CurrentSensorChannel::A){
+            instance->currentChannelADC2 = Bldc::CurrentSensorChannel::B;
+            triggerADC_CurrentB();
+        }
+        else if(instance->currentChannelADC2 == Bldc::CurrentSensorChannel::B){
+            instance->currentChannelADC2 = Bldc::CurrentSensorChannel::C;
+            triggerADC_CurrentC();
+        }else{
+            instance->currentChannelADC2 = Bldc::CurrentSensorChannel::A;
+            triggerADC_CurrentA();
+        }
     }
     
     if (IMXRT_FLEXPWM2.SM[0].STS & 0x2) {
         instance->newCycle = true;
-        IMXRT_FLEXPWM2.SM[0].STS = 0x3; // Clear FF flag
+        IMXRT_FLEXPWM2.SM[0].STS = 0x3;   // Clear FF flag
         IMXRT_FLEXPWM2.SM[0].INTEN = 0x3; // Re-enable half-period and full period interrupt (FF)
     }
-
 }
 
 void ADC1_CompletedConversionCallback(){
     if (ADC1_HS & ADC_HS_COCO0) {
-        instance->newThrottleVal = true;
-        uint32_t result = ADC1_R0; // Read the ADC result
-        instance->throttleRawVal = result; // Update throttleVal
+        uint32_t result = ADC1_R0 & 0x0FFF; // Read the ADC result
+        switch(instance->analogChannelADC1){
+            case Bldc::AnalogSensorChannel::throttle:
+            {
+                instance->newThrottleVal = true;
+                instance->throttleRawVal = result; // Update throttleVal
+                logger->data.raw_throttle = result;
+                break;
+            }
+            case Bldc::AnalogSensorChannel::VBatSense:{
+                instance->VBatSenseRaw = result;
+                logger->data.VBat = result;
+                toggleLed();
+                break;
+            }
+        }
+        ADC1_HS &= ~ADC_HS_COCO0;
     }
-    
 }
 
 void ADC2_CompletedConversionCallback(){
     if (ADC2_HS & ADC_HS_COCO0) {
-        uint32_t result = ADC2_R0;
-        switch(instance->currentChannel) {
+        uint32_t result = ADC2_R0 & 0x0FFF;
+        switch(instance->currentChannelADC2) {
             case Bldc::CurrentSensorChannel::A:
             {
                 instance->newCurrentA = true;
                 instance->currentA = result;
-                instance->currentChannel = Bldc::CurrentSensorChannel::B;
-                triggerADC_CurrentB(); 
+                logger->data.currentA = result;
                 break;
             }
             case Bldc::CurrentSensorChannel::B:
             {
                 instance->newCurrentB = true;
                 instance->currentB = result;
-                instance->currentChannel = Bldc::CurrentSensorChannel::C;
-                triggerADC_CurrentC(); 
+                logger->data.currentB = result;
                 break;
             }
             case Bldc::CurrentSensorChannel::C:
             {
                 instance->newCurrentC = true;
                 instance->currentC = result;
-                instance->currentChannel = Bldc::CurrentSensorChannel::A;
+                logger->data.currentC = result;
                 break;
             } 
+            default:
+            {
+                break;
+            }
         }
         ADC2_HS &= ~ADC_HS_COCO0;
     }
@@ -148,10 +186,17 @@ void Bldc::driverInit() {
 
 #ifdef SERIAL_DEBUG
     Serial.begin(115200);
+    Serial.println("Driver Init");
 #endif
 
+    // Communication with telemetry
+    Serial1.begin(115200);
+
+    // Initialize SD logging 
+    logger->init();
+
     // Trigger ADC conversion
-    triggerADC();
+    triggerADC_Throttle();
     triggerADC_CurrentA();
 }
 
@@ -246,7 +291,7 @@ void Bldc::configurePWM() {
 
 void Bldc::configureADC() {
     uint32_t mode = ADC_CFG_ADICLK(0b00) | ADC_CFG_MODE(0b10) | ADC_CFG_ADLSMP | ADC_CFG_ADIV(0b00) | ADC_CFG_ADSTS(0b11) | ADC_CFG_AVGS(0b10) | ADC_CFG_OVWREN;
-    uint32_t avg = (ADC_GC_AVGE & (~ADC_GC_ADCO)) | ADC_GC_CAL;
+    uint32_t avg = ((ADC_GC_AVGE) & (~ADC_GC_ADCO)) | ADC_GC_CAL;
 
     // Configure ADC1
     ADC1_CFG = mode;
@@ -254,6 +299,9 @@ void Bldc::configureADC() {
     while (ADC1_GC & ADC_GC_CAL) {
         yield();  // Wait until calibration is complete
     }
+
+    mode &= ~ADC_CFG_ADLSMP;
+    avg &= ~ADC_GC_AVGE;
 
     // Configure ADC2
     ADC2_CFG = mode;
@@ -288,9 +336,9 @@ void Bldc::readHalls(uint8_t &hall) {
 
 void Bldc::nextStep(uint8_t &currentHallState) {
     /** Override this method */
-    #ifdef SERIAL_DEBUG
-        Serial.println("Override nextStep method");
-    #endif
+    // #ifdef SERIAL_DEBUG
+    //     Serial.println("Override nextStep method");
+    // #endif
 }
 
 void Bldc::setGatePWM(Phase phase){
@@ -298,28 +346,28 @@ void Bldc::setGatePWM(Phase phase){
   {
     writePwmValue(&IMXRT_FLEXPWM2, M(2, 0) & 3, 1, phase.pwmVal, phase.mode);
     writePwmValue(&IMXRT_FLEXPWM2, M(2, 0) & 3, 2, phase.pwmVal, phase.mode);
-    #ifdef SERIAL_DEBUG
-        Serial.print("\tA> ");
-        Serial.print(phase.pwmVal);
-    #endif
+    // #ifdef SERIAL_DEBUG
+    //     Serial.print("\tA> ");
+    //     Serial.print(phase.pwmVal);
+    // #endif
   }
   if (phase.phaseID == 2)
   {
     writePwmValue(&IMXRT_FLEXPWM2, M(2, 2) & 3, 1, phase.pwmVal, phase.mode);
     writePwmValue(&IMXRT_FLEXPWM2, M(2, 2) & 3, 2, phase.pwmVal, phase.mode);
-    #ifdef SERIAL_DEBUG
-        Serial.print(" B> ");
-        Serial.print(phase.pwmVal);
-    #endif
+    // #ifdef SERIAL_DEBUG
+    //     Serial.print(" B> ");
+    //     Serial.print(phase.pwmVal);
+    // #endif
   }
   if (phase.phaseID == 3)
   {
     writePwmValue(&IMXRT_FLEXPWM2, M(2, 3) & 3, 1, phase.pwmVal, phase.mode);
     writePwmValue(&IMXRT_FLEXPWM2, M(2, 3) & 3, 2, phase.pwmVal, phase.mode);
-    #ifdef SERIAL_DEBUG
-        Serial.print(" C> ");
-        Serial.println(phase.pwmVal);
-    #endif
+    // #ifdef SERIAL_DEBUG
+    //     Serial.print(" C> ");
+    //     Serial.println(phase.pwmVal);
+    // #endif
   }
 }
 
@@ -510,9 +558,15 @@ double Bldc::computePID(PIDController_t &pid, double setpoint, double measuremen
     return output;
 }
 
-// Trigger ADC conversion for Throttle on ADC1 channel (HC0)
-void triggerADC() {
-    uint8_t ch = 0x01 | (1 << 7); // Set channel and enable interrupt
+// Trigger ADC conversion for Throttle on ADC1 channel 1
+void triggerADC_Throttle() {
+    uint8_t ch = ADC_HC_ADCH(1) | ADC_HC_AIEN; // Set channel and enable interrupt
+    ADC1_HC0 = ch;
+}
+
+// Trigger ADC conversion for battery voltage on ADC1 channel 10
+void triggerADC_VBat() {
+    uint8_t ch = ADC_HC_ADCH(10) | ADC_HC_AIEN; // Set channel and enable interrupt
     ADC1_HC0 = ch;
 }
 
