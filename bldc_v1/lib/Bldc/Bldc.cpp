@@ -40,6 +40,7 @@ void PWM2_CompletedCallback(){
     }
 }
 
+
 void ADC1_CompletedConversionCallback(){
     if (ADC1_HS & ADC_HS_COCO0) {
         uint32_t result = ADC1_R0 & 0x0FFF; // Read the ADC result
@@ -49,11 +50,16 @@ void ADC1_CompletedConversionCallback(){
                 instance->newThrottleVal = true;
                 instance->throttleRawVal = result; // Update throttleVal
                 logger->data.raw_throttle = result;
+                instance->foc_fast_data.throttle_raw = (uint16_t)result;
                 break;
             }
             case Bldc::AnalogSensorChannel::VBatSense:{
                 instance->VBatSenseRaw = result;
+                result = (uint16_t)((result * 61430UL) / 4096UL);
+                // SD log
                 logger->data.VBat = result;
+                // TELEMETRY DATA 
+                instance->foc_fast_data.vbus_mV = result;
                 toggleLed();
                 break;
             }
@@ -85,6 +91,10 @@ void ADC2_CompletedConversionCallback(){
                 instance->newCurrentC = true;
                 instance->currentC = result;
                 logger->data.currentC = result;
+                // TELEMETRY DATA 
+                // result = (result - 2048) * 16.5f / 2048.0f;
+                // float I_total = sqrt(instance->currentA*instance->currentA + instance->currentB*instance->currentB + instance->currentC*instance->currentC) / sqrt(3.0f);
+                // instance->foc_fast_data.ibus_mA = I_total;
                 break;
             } 
             default:

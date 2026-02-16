@@ -22,6 +22,7 @@ public:
         uint16_t vbus_mV;
         int32_t  ibus_mA;
         int32_t  rpm;
+        uint16_t throttle_raw;
         uint16_t fault_flags;
     } foc_all_fast_t;
 
@@ -31,6 +32,8 @@ public:
         uint8_t  state;
         uint16_t fault_flags;
     } foc_status_t;
+
+    foc_all_fast_t foc_fast_data;
 
 
     // RPM measures

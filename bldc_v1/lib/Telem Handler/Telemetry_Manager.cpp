@@ -125,7 +125,7 @@ void TelemetryManager::handleFrame(uint8_t *frame, uint8_t len)
     {
     case FOC_CMD_GET_ALL_FAST:
         if (allFast){
-            sendReply(cmd, (uint8_t*)allFast, 12);
+            sendReply(cmd, (uint8_t*)allFast, 14);
         }
         break;
 
